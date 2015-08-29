@@ -1,20 +1,10 @@
 (ns mouse-server.core
-  (:gen-class))
-
-(import java.net.ServerSocket)
-(import java.net.Socket)
-(import java.io.InputStream)
-(import java.io.InputStreamReader)
-(import java.io.BufferedReader)
-(import java.io.OutputStream)
-(import java.io.OutputStreamWriter)
-(import java.io.BufferedWriter)
+  (:require [mouse-server.socket-utils.socket :as socket-util]))
 
 (def sockets (atom []))
 (def run-server (atom true))
-
-(defn log-exception [e]
-  (println e))
+(def server (atom nil))
+(def port (atom 0))
 
 (defn list-methods [obj] 
   (map 
@@ -27,20 +17,11 @@
     (action obj)
     obj))
 
-(defn handle-exception [action]
-  (try
-    (action)
-    (catch Exception e
-      (log-exception e))))
-
 (defn close-socket [socket]
   (do-and-return 
    socket 
    (fn [s]
-     (handle-exception (fn [] (. s close))))))
-
-(defn is-open [socket]
-  (not (. socket isClosed)))
+     (socket-util/handle-exception (fn [] (. s close))))))
 
 (defn close-sockets [lst]
   (map 
@@ -49,7 +30,7 @@
 
 (defn filter-closed-sockets [lst]
   (filter
-   is-open
+   socket-util/is-open
    lst))
 
 (defn close-all-sockets []
@@ -62,61 +43,40 @@
                   (close-sockets)
                   (filter-closed-sockets)))))))
 
-(defn get-server [port]
-  (handle-exception (fn [] (ServerSocket. port))))
-
-(defn wait-for-connection [server]
-  (. server accept))
-
 (defn add-socket [socket]
   (do
     (println "adding a socket")
     (-> (close-all-sockets) 
         ((fn [a] (swap! a (fn [n] (conj n socket))))))))
 
-(defn stop-server []
-  (reset! run-server false))
-
-(defn get-socket-writer [socket]
-  (let [out (. socket getOutputStream)
-        writer (OutputStreamWriter. out)]
-    (BufferedWriter. writer)))
-
-(defn write [message socket]
-  (let [out (get-socket-writer socket)]
-    (do
-      (. out write (str message "\n"))
-      (. out flush))))
-
-(defn get-socket-reader [socket]
-  (let [in (. socket getInputStream)
-        reader (InputStreamReader. in)]
-    (BufferedReader. reader)))
-
-(defn listen-for-writes []
+(defn listen-for-writes [socket]
   (future
-    (loop []
-      (do
-        ))))
+    (let [reader (socket-util/get-socket-reader socket)]
+      (loop []
+        (let [line (. reader readLine)]
+          (if (not (= nil line))
+            (do
+              (println line)
+              (recur))
+            (println "the socket has closed... I am done listening for writes")))))))
 
 (defn listen-for-connections [server]
   (future 
     (loop []
-      (do
-        (if @run-server
-          (do
-            (println "waiting for a connection...")
-            (add-socket (wait-for-connection server))
-            (recur))
-          (do
-            (println "stopped listening")
-            (try 
-              (. server close)
-              (catch Exception e
-                (println e)))))))))
+      (if @run-server
+        (do
+          (println "waiting for a connection...")
+          (add-socket (socket-util/wait-for-connection server))
+          (recur))
+        (socket-util/handle-exception
+         (fn [] (. server close))
+         "stopped listening")))))
 
-(defn -main
-  [& args]
-  (println "Hello, World!"))
+(defn stop-server []
+  (reset! run-server false))
 
-
+(defn start-server [port]
+  (socket-util/handle-exception
+   (fn []
+     (let [server (socket-util/get-server port)]
+       (listen-for-connections server)))))
