@@ -48,5 +48,6 @@
 (defn write [socket message]
   (let [out (get-socket-writer socket)]
     (do
-      (. out write (str message "\n"))
+      (. out write message)
+      (. out newLine)
       (. out flush))))

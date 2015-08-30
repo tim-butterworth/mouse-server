@@ -1,5 +1,6 @@
 (ns mouse-server.core
-  (:require [mouse-server.socket-utils.socket :as socket-util]))
+  (:require [mouse-server.socket-utils.socket :as socket-util]
+            [mouse-server.json-utils.json :as json]))
 
 (def sockets (atom []))
 (def run-server (atom true))
@@ -57,6 +58,8 @@
           (if (not (= nil line))
             (do
               (println line)
+              (socket-util/handle-exception (fn []
+                                              (println (json/to-mp line))))
               (recur))
             (println "the socket has closed... I am done listening for writes")))))))
 
